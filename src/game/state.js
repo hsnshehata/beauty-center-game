@@ -155,8 +155,8 @@ export class GameState {
 
         // Staff
         this.staff = [
-            { id: 1, name: 'نور', role: 'makeup', skill: 85, salary: 3000, mood: 85, emoji: '👩‍🎨', busy: false, targetRoom: 'makeup' },
-            { id: 2, name: 'سارة', role: 'hair', skill: 75, salary: 2500, mood: 90, emoji: '💇‍♀️', busy: false, targetRoom: 'hair' },
+            { id: 1, name: 'نور', role: 'makeup', skill: 85, salary: 3000, mood: 85, emoji: '👩‍🎨', busy: false, targetRoom: 'makeup', hairStyle: 'ponytail', hairColor: '#37474f', skinColor: '#ffccbc', outfitColor: '#8e24aa', isStaff: true },
+            { id: 2, name: 'سارة', role: 'hair', skill: 75, salary: 2500, mood: 90, emoji: '💇‍♀️', busy: false, targetRoom: 'hair', hairStyle: 'bob', hairColor: '#ff7043', skinColor: '#ffe0b2', outfitColor: '#8e24aa', isStaff: true },
         ];
 
         // Dynamic pool
@@ -288,6 +288,11 @@ export class GameState {
         const isVip = Math.random() < 0.08;
         const isBride = !isVip && chosenService.room === 'bridal' && Math.random() < 0.4;
 
+        const styles = ['ponytail', 'double_buns', 'curly', 'bob', 'hijab'];
+        const colors = ['#ffd54f', '#ff7043', '#37474f', '#8d6e63', '#d7ccc8'];
+        const skins = ['#ffccbc', '#ffa726', '#ffe0b2', '#f5c2b3'];
+        const outfits = ['#ec407a', '#00acc1', '#26a69a', '#ab47bc', '#7e57c2'];
+
         const customer = {
             id: 'c_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
             name: isVip ? '⭐ ' + name : (isBride ? '👰 ' + name : name),
@@ -305,6 +310,11 @@ export class GameState {
             comment: null,
             commentTimer: 0,
             assignedStaffId: null,
+            // Custom styles
+            hairStyle: styles[Math.floor(Math.random() * styles.length)],
+            hairColor: colors[Math.floor(Math.random() * colors.length)],
+            skinColor: skins[Math.floor(Math.random() * skins.length)],
+            outfitColor: isVip ? '#ffd700' : (isBride ? '#ffffff' : outfits[Math.floor(Math.random() * outfits.length)]),
             // 3D positional properties
             x: 0, z: 12, // entrance
             y: 0,
@@ -517,7 +527,10 @@ export class GameState {
             staff.skill = Math.min(100, staff.skill + (Math.random() < 0.4 ? 1 : 0));
         }
 
-        const finalSatisfaction = Math.min(100, Math.floor((quality * 0.7) + (c.satisfaction * 0.3)));
+        let finalSatisfaction = Math.min(100, Math.floor((quality * 0.7) + (c.satisfaction * 0.3)));
+        if (c.isMiniGameWon) {
+            finalSatisfaction = 100;
+        }
         const isHappy = finalSatisfaction > 65;
         const isAngry = finalSatisfaction < 35;
 
@@ -528,9 +541,12 @@ export class GameState {
         let tip = 0;
         if (isHappy) {
             tip = Math.floor(earned * (Math.random() * 0.15 + 0.05));
-            c.comment = COMMENTS_POSITIVE[Math.floor(Math.random() * COMMENTS_POSITIVE.length)];
+            if (c.isMiniGameWon) {
+                tip = Math.floor(tip * 2.0); // Double tip!
+            }
+            c.comment = c.isMiniGameWon ? 'شغلك يجنن بإيدك! ❤️' : COMMENTS_POSITIVE[Math.floor(Math.random() * COMMENTS_POSITIVE.length)];
             this.satisfiedCustomers++;
-            this.reputation = Math.min(100, this.reputation + 1);
+            this.reputation = Math.min(100, this.reputation + (c.isMiniGameWon ? 2 : 1));
         } else if (isAngry) {
             earned = Math.floor(earned * 0.5); // pays half
             c.comment = COMMENTS_NEGATIVE[Math.floor(Math.random() * COMMENTS_NEGATIVE.length)];
@@ -715,6 +731,10 @@ export class GameState {
         }
 
         this.money -= hireCost;
+        const styles = ['ponytail', 'double_buns', 'curly', 'bob', 'hijab'];
+        const colors = ['#ffd54f', '#ff7043', '#37474f', '#8d6e63', '#d7ccc8'];
+        const skins = ['#ffccbc', '#ffa726', '#ffe0b2', '#f5c2b3'];
+
         this.staff.push({
             id: Date.now() + Math.random(),
             name: candidate.name,
@@ -724,7 +744,12 @@ export class GameState {
             mood: 90,
             emoji: candidate.emoji,
             busy: false,
-            targetRoom: candidate.role
+            targetRoom: candidate.role,
+            hairStyle: styles[Math.floor(Math.random() * styles.length)],
+            hairColor: colors[Math.floor(Math.random() * colors.length)],
+            skinColor: skins[Math.floor(Math.random() * skins.length)],
+            outfitColor: '#8e24aa', // uniform color
+            isStaff: true
         });
 
         this.hiringPool.splice(candidateIndex, 1);

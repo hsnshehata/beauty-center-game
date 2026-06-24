@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { ROOM_LAYOUTS, ROOM_COSTS, SERVICES } from './state.js';
+import { ROOM_LAYOUTS, ROOM_COSTS } from './state.js';
 
 export class Renderer3D {
     constructor(gameState, uiManager, canvasId) {
@@ -22,7 +22,6 @@ export class Renderer3D {
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
         this.dragStart = { x: 0, y: 0 };
-        this.isDragging = false;
     }
 
     init() {
@@ -30,14 +29,13 @@ export class Renderer3D {
         
         // Scene
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color('#100E1F');
+        this.scene.background = new THREE.Color('#0c0b16');
         
         // Fog for depth
-        this.scene.fog = new THREE.FogExp2('#100E1F', 0.025);
+        this.scene.fog = new THREE.FogExp2('#0c0b16', 0.025);
 
         // Camera
         this.camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
-        // Position camera for a cute high-angle isometric-style perspective
         this.camera.position.set(-18, 16, 22);
         
         // Renderer
@@ -47,7 +45,7 @@ export class Renderer3D {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.0;
+        this.renderer.toneMappingExposure = 1.05;
 
         // Controls
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -56,7 +54,6 @@ export class Renderer3D {
         this.controls.maxPolarAngle = Math.PI / 2.1; // Don't go below floor
         this.controls.minDistance = 8;
         this.controls.maxDistance = 45;
-        // Focus on center of salon
         this.controls.target.set(1, 0, 1);
 
         // Lighting
@@ -81,15 +78,14 @@ export class Renderer3D {
 
     setupLights() {
         // Ambient soft illumination
-        const ambient = new THREE.AmbientLight('#ffffff', 0.45);
+        const ambient = new THREE.AmbientLight('#ffffff', 0.4);
         this.scene.add(ambient);
 
         // Sun-like directional light for shadows
-        this.dirLight = new THREE.DirectionalLight('#fff0e0', 0.85);
+        this.dirLight = new THREE.DirectionalLight('#fff5ea', 0.85);
         this.dirLight.position.set(-15, 25, 10);
         this.dirLight.castShadow = true;
         
-        // Shadow resolutions
         this.dirLight.shadow.mapSize.width = 2048;
         this.dirLight.shadow.mapSize.height = 2048;
         this.dirLight.shadow.camera.near = 0.5;
@@ -100,17 +96,17 @@ export class Renderer3D {
         this.dirLight.shadow.camera.right = d;
         this.dirLight.shadow.camera.top = d;
         this.dirLight.shadow.camera.bottom = -d;
-        this.dirLight.shadow.bias = -0.0005;
+        this.dirLight.shadow.bias = -0.0003;
         
         this.scene.add(this.dirLight);
 
         // Soft floor bounce light
-        const hemiLight = new THREE.HemisphereLight('#80b0ff', '#1f1a3a', 0.35);
+        const hemiLight = new THREE.HemisphereLight('#b3e5fc', '#1c1b2c', 0.35);
         this.scene.add(hemiLight);
     }
 
     createEnvironment() {
-        // Main Salon floor (beige gloss floor tiles)
+        // Main Salon floor (gloss floor tiles with custom color)
         const floorGeo = new THREE.BoxGeometry(26, 0.2, 20);
         const floorMat = new THREE.MeshStandardMaterial({
             color: '#eae3db',
@@ -185,6 +181,46 @@ export class Renderer3D {
         // Potted plants at entrance
         this.createPlantMesh(-2.5, 9.3);
         this.createPlantMesh(0.5, 9.3);
+
+        // 🌟 ADD GLOWING NEON SIGN ON BACK WALL
+        this.createNeonSign();
+    }
+
+    createNeonSign() {
+        const neonGroup = new THREE.Group();
+        neonGroup.position.set(0, 2.3, -9.8);
+
+        // Glowing heart shape outline in pink emissive
+        const heartShape = new THREE.Shape();
+        const x = 0, y = 0;
+        heartShape.moveTo( x + 0.4, y + 0.4 );
+        heartShape.bezierCurveTo( x + 0.4, y + 0.4, x + 0.3, y, x, y );
+        heartShape.bezierCurveTo( x - 0.5, y, x - 0.5, y + 0.6, x - 0.5, y + 0.6 );
+        heartShape.bezierCurveTo( x - 0.5, y + 0.9, x - 0.25, y + 1.25, x + 0.4, y + 1.6 );
+        heartShape.bezierCurveTo( x + 1.05, y + 1.25, x + 1.3, y + 0.9, x + 1.3, y + 0.6 );
+        heartShape.bezierCurveTo( x + 1.3, y + 0.6, x + 1.3, y, x + 0.8, y );
+        heartShape.bezierCurveTo( x + 0.5, y, x + 0.4, y + 0.4, x + 0.4, y + 0.4 );
+
+        const extrudeSettings = { depth: 0.08, bevelEnabled: true, bevelSegments: 3, steps: 1, bevelSize: 0.01, bevelThickness: 0.01 };
+        const heartGeo = new THREE.ExtrudeGeometry(heartShape, extrudeSettings);
+        
+        const neonMat = new THREE.MeshStandardMaterial({
+            color: '#ff1744',
+            emissive: '#ff1744',
+            emissiveIntensity: 3.0,
+            roughness: 0.1
+        });
+        const heartMesh = new THREE.Mesh(heartGeo, neonMat);
+        heartMesh.scale.set(0.65, -0.65, 1);
+        heartMesh.position.set(-0.25, 0.5, 0); // centering
+        neonGroup.add(heartMesh);
+
+        // Point Light to illuminate the wall
+        const neonLight = new THREE.PointLight('#ff1744', 1.8, 10);
+        neonLight.position.set(0, 0, 0.4);
+        neonGroup.add(neonLight);
+
+        this.scene.add(neonGroup);
     }
 
     createPlantMesh(x, z) {
@@ -216,7 +252,6 @@ export class Renderer3D {
     }
 
     updateRooms() {
-        // Iterate through rooms layout
         Object.keys(ROOM_LAYOUTS).forEach(roomId => {
             const layout = ROOM_LAYOUTS[roomId];
             const roomState = this.game.rooms[roomId];
@@ -249,6 +284,9 @@ export class Renderer3D {
                 );
                 floorTile.receiveShadow = true;
                 roomGroup.add(floorTile);
+
+                // Add glass partitions between sections
+                this.createGlassPartition(roomGroup, layout);
 
                 // Add furniture meshes based on room type
                 this.addFurniture(roomGroup, roomId, roomState.level);
@@ -289,6 +327,21 @@ export class Renderer3D {
         });
     }
 
+    createGlassPartition(roomGroup, layout) {
+        // Decorative glass partition wall on the right side of the room
+        const pGeo = new THREE.BoxGeometry(0.08, 1.8, layout.d);
+        const pMat = new THREE.MeshPhysicalMaterial({
+            color: '#e91e63',
+            roughness: 0.15,
+            transmission: 0.85,
+            transparent: true,
+            opacity: 0.4
+        });
+        const partition = new THREE.Mesh(pGeo, pMat);
+        partition.position.set(layout.w / 2, 0.9, 0);
+        roomGroup.add(partition);
+    }
+
     addFurniture(group, roomId, level) {
         const woodMat = new THREE.MeshStandardMaterial({ color: '#8d6e63', roughness: 0.6 });
         const plasticMat = new THREE.MeshStandardMaterial({ color: '#eeeeee', roughness: 0.3 });
@@ -323,7 +376,15 @@ export class Renderer3D {
                 break;
 
             case 'lounge':
-                // Cute Couches (facing each other)
+                // Circular Persian rug under couches
+                const rugGeo = new THREE.CylinderGeometry(1.5, 1.5, 0.02, 16);
+                const rugMat = new THREE.MeshStandardMaterial({ color: '#3f1d4f', roughness: 0.9 });
+                const rug = new THREE.Mesh(rugGeo, rugMat);
+                rug.position.y = 0.01;
+                rug.receiveShadow = true;
+                group.add(rug);
+
+                // Couches
                 this.createCouch(group, -0.9, 0, 0, Math.PI/2);
                 this.createCouch(group, 0.9, 0, 0, -Math.PI/2);
                 
@@ -342,7 +403,7 @@ export class Renderer3D {
                 group.add(mDesk);
 
                 // Chair
-                this.createChair(group, 0, 0.3, 0.1, 0); // facing vanity
+                this.createChair(group, 0, 0.3, 0.1, 0);
 
                 // Mirror with vanity lights
                 const mFrame = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.0, 0.1), plasticMat);
@@ -364,7 +425,7 @@ export class Renderer3D {
                 break;
 
             case 'hair':
-                // Styling Chair (faces forward/away from mirror)
+                // Styling Chair (faces forward)
                 this.createChair(group, 0, 0.3, -0.1, Math.PI); 
 
                 // Styling Station Table
@@ -373,7 +434,7 @@ export class Renderer3D {
                 hTable.castShadow = true;
                 group.add(hTable);
 
-                // Floating Mirror
+                // Mirror
                 const hMirror = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.2, 0.05), mirrorMat);
                 hMirror.position.set(0, 1.35, -0.75);
                 group.add(hMirror);
@@ -401,14 +462,14 @@ export class Renderer3D {
                 break;
 
             case 'spa':
-                // Tub structure (procedural jacuzzi cylinder)
-                const tubMat = new THREE.MeshStandardMaterial({ color: '#c5e1a5', roughness: 0.2 });
+                // Jacuzzi tub
+                const tubMat = new THREE.MeshStandardMaterial({ color: '#b2dfdb', roughness: 0.25 });
                 const tubOuter = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.6, 12), tubMat);
                 tubOuter.position.set(0, 0.3, 0);
                 tubOuter.castShadow = true;
                 group.add(tubOuter);
 
-                // Blue Transparent Water
+                // Water
                 const waterMat = new THREE.MeshStandardMaterial({
                     color: '#00e5ff',
                     roughness: 0.1,
@@ -422,7 +483,7 @@ export class Renderer3D {
                 break;
 
             case 'skincare':
-                // Spa facial bed
+                // Facial bed
                 const scBed = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 1.6), plasticMat);
                 scBed.position.set(0, 0.3, 0);
                 scBed.castShadow = true;
@@ -435,7 +496,7 @@ export class Renderer3D {
                 break;
 
             case 'massage':
-                // Massage Table (Wood structure + dark sheet)
+                // Massage Table
                 const mBed = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 1.7), woodMat);
                 mBed.position.set(0, 0.3, 0);
                 mBed.castShadow = true;
@@ -447,7 +508,7 @@ export class Renderer3D {
                 break;
 
             case 'coffee':
-                // Counter bar L-shape
+                // Counter bar
                 const bar = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.8, 0.5), woodMat);
                 bar.position.set(-0.3, 0.4, -0.3);
                 bar.castShadow = true;
@@ -600,7 +661,6 @@ export class Renderer3D {
     }
 
     updateStaff() {
-        // Clear old staff meshes
         Object.keys(this.staffGroups).forEach(id => {
             this.scene.remove(this.staffGroups[id]);
         });
@@ -609,13 +669,12 @@ export class Renderer3D {
         this.game.staff.forEach(s => {
             const group = new THREE.Group();
             
-            // Build simple character
-            this.buildCharacterMesh(group, s.emoji, '#8e24aa');
+            // Build custom staff character with pink uniform
+            this.buildCharacterMesh(group, s);
             
             // Set position standing next to their corresponding built room
             const layout = ROOM_LAYOUTS[s.role];
             if (layout) {
-                // Standing offsets based on room roles
                 let offset = { x: 0.6, z: 0.6 };
                 if (s.role === 'reception') offset = { x: 0, z: -0.4 };
                 if (s.role === 'hair') offset = { x: 0.5, z: -0.4 };
@@ -632,32 +691,27 @@ export class Renderer3D {
     }
 
     updateCharacters(dt) {
-        // Synchronize state customers to 3D meshes
         const activeIds = {};
 
         this.game.customers.forEach(c => {
             activeIds[c.id] = true;
 
-            // Const speed walking interpolate towards target
             const dx = c.targetX - c.x;
             const dz = c.targetZ - c.z;
             const dist = Math.sqrt(dx*dx + dz*dz);
-            const walkSpeed = 3.5; // units per sec
+            const walkSpeed = 3.5;
 
             if (dist > 0.05) {
                 c.x += (dx / dist) * walkSpeed * dt;
                 c.z += (dz / dist) * walkSpeed * dt;
                 c.animState = 'walk';
                 c.sitting = false;
-                
-                // Rotation to face walk direction
                 c.rotationY = Math.atan2(dx, dz);
             } else {
                 c.x = c.targetX;
                 c.z = c.targetZ;
                 c.animState = c.sitting ? 'sitting' : 'idle';
                 
-                // Face the workstation if sitting
                 if (c.sitting && ROOM_LAYOUTS[c.room]) {
                     c.rotationY = ROOM_LAYOUTS[c.room].yRot;
                 }
@@ -666,7 +720,8 @@ export class Renderer3D {
             // Create mesh if not exists
             if (!this.characters[c.id]) {
                 const group = new THREE.Group();
-                this.buildCharacterMesh(group, c.emoji, c.isVip ? '#ffd700' : (c.isBride ? '#ffffff' : '#00acc1'), c.isBride);
+                group.userData = { customerId: c.id }; // Store customer ID for clicks
+                this.buildCharacterMesh(group, c);
                 this.scene.add(group);
                 this.characters[c.id] = group;
             }
@@ -677,7 +732,7 @@ export class Renderer3D {
                 mesh.rotation.y = c.rotationY;
             }
 
-            // Apply visual animations
+            // Apply animations
             this.animateCharacter(mesh, c, dt);
             
             // Generate progress particles if in service
@@ -694,14 +749,13 @@ export class Renderer3D {
             }
         });
 
-        // Animate Staff (Idle / Working bobs)
+        // Animate Staff
         this.game.staff.forEach(s => {
             const mesh = this.staffGroups[s.id];
             if (mesh) {
                 const dummyChar = { animState: s.busy ? 'work' : 'idle', id: s.id };
                 this.animateCharacter(mesh, dummyChar, dt);
                 
-                // Spawn sparkles for working staff
                 if (s.busy && Math.random() < 0.03) {
                     this.spawnParticles(mesh.position.x, mesh.position.y + 1.2, mesh.position.z, 'work');
                 }
@@ -709,37 +763,24 @@ export class Renderer3D {
         });
     }
 
-    buildCharacterMesh(group, emoji, outfitColor, hasCrown = false) {
+    buildCharacterMesh(group, charObj) {
+        const skinColor = charObj.skinColor || '#ffccbc';
+        const hairColor = charObj.hairColor || (charObj.emoji === '👱‍♀️' ? '#ffd54f' : (charObj.emoji === '👩‍🦰' ? '#ff7043' : '#37474f'));
+        const hairStyle = charObj.hairStyle || 'ponytail';
+        const outfitColor = charObj.outfitColor || (charObj.isVip ? '#ffd700' : (charObj.isBride ? '#ffffff' : '#00acc1'));
+        const hasCrown = charObj.isBride || false;
+        const isStaff = charObj.isStaff || false;
+
+        // Head
         const headGeo = new THREE.BoxGeometry(0.35, 0.35, 0.35);
-        const headMat = new THREE.MeshStandardMaterial({ color: '#ffccbc', roughness: 0.8 }); // skin
+        const headMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.8 });
         const head = new THREE.Mesh(headGeo, headMat);
         head.position.y = 1.05;
         head.name = 'head';
         head.castShadow = true;
         group.add(head);
 
-        // Hair (box cap)
-        const hairMat = new THREE.MeshStandardMaterial({
-            color: emoji === '👱‍♀️' ? '#ffd54f' : (emoji === '👩‍🦰' ? '#ff7043' : '#37474f'),
-            roughness: 0.9
-        });
-        const hair = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.15, 0.37), hairMat);
-        hair.position.y = 1.2;
-        group.add(hair);
-
-        // Bun / details
-        if (emoji === '🧕') {
-            // Hijab overlay box
-            const hijab = new THREE.Mesh(new THREE.BoxGeometry(0.39, 0.39, 0.39), new THREE.MeshStandardMaterial({ color: '#5e35b1' }));
-            hijab.position.y = 1.05;
-            group.add(hijab);
-        } else {
-            const ponytail = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), hairMat);
-            ponytail.position.set(0, 1.15, -0.2);
-            group.add(ponytail);
-        }
-
-        // Eyes (tiny dark blocks)
+        // Eyes
         const eyeMat = new THREE.MeshBasicMaterial({ color: '#000000' });
         const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.02), eyeMat);
         eyeL.position.set(-0.08, 1.05, 0.175);
@@ -748,7 +789,50 @@ export class Renderer3D {
         eyeR.position.set(0.08, 1.05, 0.175);
         group.add(eyeR);
 
-        // Crown for Brides
+        // Hair Mesh based on hairStyle
+        const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.9 });
+        
+        // Hair base cap
+        const hairCap = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.15, 0.37), hairMat);
+        hairCap.position.y = 1.2;
+        group.add(hairCap);
+
+        if (hairStyle === 'ponytail') {
+            const ponytail = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), hairMat);
+            ponytail.position.set(0, 1.15, -0.2);
+            group.add(ponytail);
+        } else if (hairStyle === 'double_buns') {
+            const bunL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), hairMat);
+            bunL.position.set(-0.16, 1.3, 0);
+            group.add(bunL);
+            const bunR = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), hairMat);
+            bunR.position.set(0.16, 1.3, 0);
+            group.add(bunR);
+        } else if (hairStyle === 'curly') {
+            for (let xo = -0.15; xo <= 0.15; xo += 0.1) {
+                for (let yo = 1.15; yo <= 1.25; yo += 0.1) {
+                    const curl = new THREE.Mesh(new THREE.SphereGeometry(0.06, 4, 4), hairMat);
+                    curl.position.set(xo + (Math.random()*0.02-0.01), yo, -0.05 + (Math.random()*0.02-0.01));
+                    group.add(curl);
+                }
+            }
+        } else if (hairStyle === 'bob') {
+            const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.25, 0.37), hairMat);
+            sideL.position.set(-0.17, 1.05, 0);
+            group.add(sideL);
+            const sideR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.25, 0.37), hairMat);
+            sideR.position.set(0.17, 1.05, 0);
+            group.add(sideR);
+        } else if (hairStyle === 'hijab') {
+            const hijabGeo = new THREE.BoxGeometry(0.39, 0.39, 0.39);
+            const hijabMat = new THREE.MeshStandardMaterial({ color: isStaff ? '#4a148c' : '#5e35b1', roughness: 0.8 });
+            const hijab = new THREE.Mesh(hijabGeo, hijabMat);
+            hijab.position.y = 1.05;
+            group.add(hijab);
+            hairCap.visible = false;
+        }
+
+        // Crown
         if (hasCrown) {
             const crown = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.03, 4, 10), new THREE.MeshStandardMaterial({ color: '#ffd700', metalness: 0.9 }));
             crown.position.y = 1.25;
@@ -756,7 +840,7 @@ export class Renderer3D {
             group.add(crown);
         }
 
-        // Torso (dress/clothing)
+        // Torso
         const bodyGeo = new THREE.CylinderGeometry(0.15, 0.25, 0.6, 8);
         const bodyMat = new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.7 });
         const body = new THREE.Mesh(bodyGeo, bodyMat);
@@ -766,8 +850,16 @@ export class Renderer3D {
         body.receiveShadow = true;
         group.add(body);
 
-        // Legs (left and right)
-        const legMat = new THREE.MeshStandardMaterial({ color: '#ffccbc' });
+        // Staff Apron
+        if (isStaff) {
+            const apronMat = new THREE.MeshStandardMaterial({ color: '#e91e63', roughness: 0.8 });
+            const apron = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.4, 0.05), apronMat);
+            apron.position.set(0, 0.5, 0.16);
+            group.add(apron);
+        }
+
+        // Legs
+        const legMat = new THREE.MeshStandardMaterial({ color: skinColor });
         const legL = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.3, 0.07), legMat);
         legL.position.set(-0.08, 0.15, 0);
         legL.name = 'legL';
@@ -801,49 +893,61 @@ export class Renderer3D {
         const head = group.getObjectByName('head');
         const body = group.getObjectByName('body');
 
-        // Reset rotations
-        if (legL) legL.rotation.x = 0;
-        if (legR) legR.rotation.x = 0;
-        if (armL) { armL.rotation.x = 0; armL.rotation.z = 0; }
-        if (armR) { armR.rotation.x = 0; armR.rotation.z = 0; }
-        if (head) head.position.y = 1.05;
-        if (body) body.position.y = 0.55;
+        // Reset positions/rotations
+        if (legL) { legL.rotation.x = 0; legL.position.set(-0.08, 0.15, 0); }
+        if (legR) { legR.rotation.x = 0; legR.position.set(0.08, 0.15, 0); }
+        if (armL) { armL.rotation.x = 0; armL.rotation.z = 0; armL.position.set(-0.2, 0.65, 0); }
+        if (armR) { armR.rotation.x = 0; armR.rotation.z = 0; armR.position.set(0.2, 0.65, 0); }
+        if (head) { head.position.y = 1.05; head.rotation.y = 0; }
+        if (body) { body.position.y = 0.55; body.rotation.z = 0; }
+        group.position.y = 0;
+
+        // Dynamic reactions based on comments
+        if (c.comment) {
+            const isHappyComment = ['خدمة ممتازة', 'أحسنتوا', 'أحلى بيوتي', 'شغل نظيف', 'أفضل تجربة', 'برافو'].some(term => c.comment.includes(term));
+            
+            if (isHappyComment) {
+                // Happy reaction: bounce and spin!
+                group.position.y = Math.abs(Math.sin(time * 12)) * 0.4;
+                group.rotation.y += dt * 8;
+                if (armL) armL.rotation.z = 1.8;
+                if (armR) armR.rotation.z = -1.8;
+                return;
+            } else if (c.comment.includes('طويل') || c.comment.includes('غالي') || c.comment.includes('مش كويس') || c.comment.includes('تأخير') || c.comment.includes('غاضبة')) {
+                // Angry reaction: stomp and shake head!
+                if (head) head.rotation.y = Math.sin(time * 22) * 0.35;
+                if (body) body.rotation.z = Math.sin(time * 14) * 0.15;
+                if (armL) armL.rotation.x = 0.5;
+                if (armR) armR.rotation.x = 0.5;
+                return;
+            }
+        }
 
         if (c.animState === 'walk') {
-            // Legs swinging
             const swing = Math.sin(time * 2.5) * 0.55;
             if (legL) legL.rotation.x = swing;
             if (legR) legR.rotation.x = -swing;
-            
-            // Arms swinging
             if (armL) armL.rotation.x = -swing * 0.6;
             if (armR) armR.rotation.x = swing * 0.6;
 
-            // Body bobbing up and down
             const bob = Math.abs(Math.sin(time * 5.0)) * 0.06;
             if (head) head.position.y = 1.05 + bob;
             if (body) body.position.y = 0.55 + bob;
             if (legL) legL.position.y = 0.15 + bob;
             if (legR) legR.position.y = 0.15 + bob;
         } else if (c.animState === 'sitting') {
-            // Fold legs forward
             if (legL) { legL.rotation.x = -Math.PI / 2; legL.position.set(-0.08, 0.35, 0.12); }
             if (legR) { legR.rotation.x = -Math.PI / 2; legR.position.set(0.08, 0.35, 0.12); }
-            // Lower torso
             if (body) body.position.y = 0.4;
             if (head) head.position.y = 0.9;
             if (armL) { armL.rotation.x = -0.4; armL.position.y = 0.5; }
             if (armR) { armR.rotation.x = -0.4; armR.position.y = 0.5; }
         } else if (c.animState === 'work') {
-            // Bobbing slightly
             const bob = Math.sin(time * 3.0) * 0.03;
             if (head) head.position.y = 1.05 + bob;
-            
-            // Wave hands forward
             if (armL) { armL.rotation.x = -Math.PI/3 + Math.sin(time*5)*0.1; armL.rotation.z = 0.1; }
             if (armR) { armR.rotation.x = -Math.PI/3 + Math.cos(time*5)*0.1; armR.rotation.z = -0.1; }
         } else {
-            // Idle breathing bob
             const bob = Math.sin(time * 0.8) * 0.02;
             if (head) head.position.y = 1.05 + bob;
         }
@@ -879,7 +983,7 @@ export class Renderer3D {
                     (Math.random() * 0.5 + 0.3) * (type === 'spa' ? 0.8 : 1.5),
                     (Math.random() * 0.3 - 0.15) * 1.5
                 ),
-                life: 1.0, // scale from 1 to 0
+                life: 1.0,
                 fadeSpeed: Math.random() * 0.8 + 0.6
             });
         }
@@ -888,11 +992,7 @@ export class Renderer3D {
     updateParticles(dt) {
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const p = this.particles[i];
-            
-            // Move particle
             p.mesh.position.addScaledVector(p.vel, dt);
-            
-            // Fade out
             p.life -= p.fadeSpeed * dt;
             p.mesh.material.opacity = p.life * 0.8;
             p.mesh.scale.setScalar(p.life);
@@ -909,39 +1009,42 @@ export class Renderer3D {
     onMouseDown(e) {
         this.dragStart.x = e.clientX;
         this.dragStart.y = e.clientY;
-        this.isDragging = false;
     }
 
     onMouseUp(e) {
         const dx = e.clientX - this.dragStart.x;
         const dy = e.clientY - this.dragStart.y;
         
-        // If mouse moved very little, treat as click
         if (Math.sqrt(dx*dx + dy*dy) < 5) {
             this.handleRaycastClick(e);
         }
     }
 
     handleRaycastClick(e) {
-        // Calculate mouse normalized coordinates
         this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
         this.raycaster.setFromCamera(this.mouse, this.camera);
-        
-        // Intersection with room meshes only
         const intersects = this.raycaster.intersectObjects(this.scene.children, true);
         
-        // Look for custom room metadata
         for (let i = 0; i < intersects.length; i++) {
             let obj = intersects[i].object;
-            // Bubble up to find parent room group
             while (obj && obj.parent) {
+                // Check if customer was clicked
+                if (obj.userData && obj.userData.customerId) {
+                    const customerId = obj.userData.customerId;
+                    const customer = this.game.customers.find(cust => cust.id === customerId);
+                    if (customer && customer.state === 'in_service') {
+                        // Open interactive manual service mini-game modal!
+                        this.ui.startMiniGame(customer);
+                        return;
+                    }
+                }
+                
+                // Check if room was clicked
                 if (obj.userData && obj.userData.roomId) {
                     const roomId = obj.userData.roomId;
                     const room = this.game.rooms[roomId];
-                    
-                    // Trigger UI build/upgrade modal
                     this.ui.openModal('build_upgrade', { id: roomId, built: room.built, level: room.level });
                     return;
                 }
@@ -957,13 +1060,10 @@ export class Renderer3D {
     }
 
     animate(dt) {
-        // Update particles
         this.updateParticles(dt);
-
-        // Update characters walking & logic positions
         this.updateCharacters(dt);
 
-        // Spin lock icons slightly
+        // Spin lock icons
         Object.keys(this.roomGroups).forEach(roomId => {
             const grp = this.roomGroups[roomId];
             const lock = grp.getObjectByName('lockVisual');
@@ -973,10 +1073,7 @@ export class Renderer3D {
             }
         });
 
-        // Controls update
         this.controls.update();
-
-        // Render
         this.renderer.render(this.scene, this.camera);
     }
 }

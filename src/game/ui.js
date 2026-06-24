@@ -938,6 +938,11 @@ export class UIManager {
                 this.modalTitle.innerHTML = room.built ? '🛠️ ترقية الغرفة' : '🏗️ بناء قسم جديد';
                 this.renderBuildUpgradeContent(room);
                 break;
+            case 'mini_game':
+                const customer = this.modalData;
+                this.modalTitle.innerHTML = `🎮 تنفيذ الخدمة يدوياً: ${customer.name}`;
+                this.renderMiniGameContent(customer);
+                break;
         }
     }
 
@@ -1249,7 +1254,605 @@ export class UIManager {
         }
 
         // Active screens refresh
-        if (this.activeModal) {
+        if (this.activeModal && this.activeModal !== 'mini_game') {
+            this.renderModalContent();
+        }
+    }
+
+    startMiniGame(customer) {
+        this.openModal('mini_game', customer);
+    }
+
+    renderMiniGameContent(customer) {
+        const roomName = ROOM_LAYOUTS[customer.room].name;
+        const emoji = ROOM_LAYOUTS[customer.room].emoji;
+        
+        let instructions = '';
+        if (customer.room === 'hair') instructions = 'اضغط على زر التفاعل ✂️ أو زر المسافة (Space) عندما يكون المؤشر الأحمر في المنطقة الخضراء!';
+        else if (customer.room === 'makeup') instructions = 'اضغط على النقاط المضيئة بالترتيب الصحيح (من 1 إلى 5) لوضع المكياج!';
+        else if (customer.room === 'nails') instructions = 'اضغط لطلاء الأظافر عندما يتطابق لون الفرشاة مع اللون الدائري المطلوب فوق كل ظفر!';
+        else if (customer.room === 'spa') instructions = 'فرقع الفقاعات البخارية الصاعدة بالنقر عليها بسرعة! تحتاج 15 فقاعة!';
+        else if (customer.room === 'bridal') instructions = 'اضغط على زر إسقاط التاج 👑 عندما يكون التاج في المنتصف تماماً فوق رأس العروسة!';
+        else instructions = 'اضغط على زر التفاعل في الوقت المناسب لإرضاء العميلة!';
+
+        this.modalBody.innerHTML = `
+            <div style="text-align:center; margin-bottom:15px;">
+                <div style="font-size:1.15rem; font-weight:800; color:var(--primary);">${emoji} قسم ${roomName} (${customer.name})</div>
+                <div style="font-size:0.85rem; color:rgba(255,255,255,0.6); margin-top:5px;">${instructions}</div>
+            </div>
+            
+            <canvas id="mini-game-canvas" width="550" height="300" style="display:block; margin:0 auto; background:#0c0b16; border-radius:16px; border:1px solid rgba(255,255,255,0.08); box-shadow: inset 0 0 25px rgba(0,0,0,0.8); cursor: pointer;"></canvas>
+            
+            <div style="display:flex; justify-content:center; gap:15px; margin-top:20px;">
+                <button id="mini-game-btn" class="action-btn" style="width:200px; padding:10px; font-size:1rem;">تفاعل!</button>
+                <button id="mini-game-quit" class="reset-btn" style="width:200px; margin:0; padding:10px; font-size:1rem;">انسحاب (تلقائي)</button>
+            </div>
+        `;
+
+        const canvas = document.getElementById('mini-game-canvas');
+        const btn = document.getElementById('mini-game-btn');
+        const quitBtn = document.getElementById('mini-game-quit');
+
+        // Cancel previous loop if running
+        if (this.miniGameLoopId) {
+            cancelAnimationFrame(this.miniGameLoopId);
+        }
+
+        // Initialize the selected mini game
+        this.initMiniGame(canvas, btn, quitBtn, customer);
+    }
+
+    initMiniGame(canvas, btn, quitBtn, customer) {
+        const ctx = canvas.getContext('2d');
+        const type = customer.room;
+        
+        let gameState = 'playing'; // playing, won, lost
+        let score = 0;
+        let lives = 3;
+        let timer = type === 'spa' ? 10.0 : 0;
+        
+        // Game variables based on type
+        // 1. Hair styling variables
+        let pointerX = 50;
+        let pointerDir = 1;
+        let pointerSpeed = 4.5 + (this.game.level * 0.4);
+        let targetStart = 150 + Math.random() * 150;
+        let targetWidth = 90 - (this.game.level * 2);
+
+        // 2. Makeup variables
+        const dots = [
+            { x: 275, y: 85, label: 'أساس', color: '#ffccbc', active: true, clicked: false },
+            { x: 250, y: 70, label: 'أيشادو', color: '#e91e63', active: false, clicked: false },
+            { x: 300, y: 70, label: 'أيشادو', color: '#e91e63', active: false, clicked: false },
+            { x: 245, y: 95, label: 'بلاش', color: '#ff8a80', active: false, clicked: false },
+            { x: 305, y: 95, label: 'بلاش', color: '#ff8a80', active: false, clicked: false },
+            { x: 275, y: 125, label: 'روج', color: '#d81b60', active: false, clicked: false }
+        ];
+        let activeDotIdx = 0;
+
+        // 3. Nails variables
+        const targetColors = ['#f44336', '#e91e63', '#9c27b0', '#00bcd4', '#ffd700'];
+        const nailX = [150, 210, 275, 340, 400];
+        const nailColors = ['#ffccbc', '#ffccbc', '#ffccbc', '#ffccbc', '#ffccbc'];
+        let activeNailIdx = 0;
+        let colorCycleTimer = 0;
+        let currentColorIdx = 0;
+
+        // 4. Spa variables
+        let bubbles = [];
+        let spawnTimer = 0;
+
+        // 5. Bridal variables
+        let tiaraX = 50;
+        let tiaraDir = 1;
+        let tiaraSpeed = 5 + (this.game.level * 0.5);
+        let tiaraY = 50;
+        let falling = false;
+
+        // Button action
+        if (type === 'hair') btn.textContent = 'قص الشعر ✂️';
+        else if (type === 'makeup') btn.textContent = 'دمج المكياج ✨';
+        else if (type === 'nails') btn.textContent = 'طلاء الأظافر 💅';
+        else if (type === 'spa') btn.textContent = 'فرقعة البخار 🧖‍♀️';
+        else if (type === 'bridal') btn.textContent = 'إسقاط التاج 👑';
+
+        const triggerAction = () => {
+            if (gameState !== 'playing') return;
+
+            if (type === 'hair') {
+                const pointerPct = pointerX / 550;
+                const minPct = targetStart / 550;
+                const maxPct = (targetStart + targetWidth) / 550;
+
+                if (pointerX >= targetStart && pointerX <= targetStart + targetWidth) {
+                    score++;
+                    // Play success
+                    window.gameInstance.playSynthSound && window.gameInstance.playSynthSound('success');
+                    targetStart = 100 + Math.random() * 250;
+                    if (score >= 3) gameState = 'won';
+                } else {
+                    lives--;
+                    window.gameInstance.playSynthSound && window.gameInstance.playSynthSound('danger');
+                    if (lives <= 0) gameState = 'lost';
+                }
+            } else if (type === 'nails') {
+                const brushColor = targetColors[currentColorIdx];
+                const targetColor = targetColors[activeNailIdx];
+                if (brushColor === targetColor) {
+                    nailColors[activeNailIdx] = targetColor;
+                    activeNailIdx++;
+                    score = activeNailIdx;
+                    window.gameInstance.playSynthSound && window.gameInstance.playSynthSound('success');
+                    if (activeNailIdx >= 5) gameState = 'won';
+                } else {
+                    lives--;
+                    window.gameInstance.playSynthSound && window.gameInstance.playSynthSound('danger');
+                    if (lives <= 0) gameState = 'lost';
+                }
+            } else if (type === 'bridal') {
+                if (!falling) {
+                    falling = true;
+                    window.gameInstance.playSynthSound && window.gameInstance.playSynthSound('click');
+                }
+            }
+        };
+
+        btn.addEventListener('click', triggerAction);
+        
+        // Canvas click handler
+        canvas.addEventListener('click', (e) => {
+            if (gameState !== 'playing') return;
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            if (type === 'makeup') {
+                const activeDot = dots[activeDotIdx];
+                const d2 = (clickX - activeDot.x)**2 + (clickY - activeDot.y)**2;
+                if (d2 < 250) { // radius 15-20px
+                    activeDot.clicked = true;
+                    activeDotIdx++;
+                    score = activeDotIdx;
+                    window.gameInstance.playSynthSound && window.gameInstance.playSynthSound('success');
+                    if (activeDotIdx >= dots.length) {
+                        gameState = 'won';
+                    } else {
+                        dots[activeDotIdx].active = true;
+                    }
+                } else {
+                    window.gameInstance.playSynthSound && window.gameInstance.playSynthSound('danger');
+                }
+            } else if (type === 'spa') {
+                // Check if hit bubble
+                for (let i = bubbles.length - 1; i >= 0; i--) {
+                    const b = bubbles[i];
+                    const d2 = (clickX - b.x)**2 + (clickY - b.y)**2;
+                    if (d2 < b.r * b.r * 1.5) {
+                        bubbles.splice(i, 1);
+                        score++;
+                        window.gameInstance.playSynthSound && window.gameInstance.playSynthSound('click');
+                        if (score >= 15) {
+                            gameState = 'won';
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Spacebar hook
+        const handleKeyDown = (e) => {
+            if (e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+                triggerAction();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+
+        // Quit Button Action
+        quitBtn.addEventListener('click', () => {
+            cleanup();
+            this.closeModal();
+        });
+
+        const cleanup = () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            if (this.miniGameLoopId) cancelAnimationFrame(this.miniGameLoopId);
+        };
+
+        // Frame update & render loop
+        let lastT = performance.now();
+        const loop = (timestamp) => {
+            const dt = Math.min((timestamp - lastT) / 1000, 0.1);
+            lastT = timestamp;
+
+            // Clear
+            ctx.fillStyle = '#0c0b16';
+            ctx.fillRect(0, 0, 550, 300);
+
+            // Grid backing
+            ctx.strokeStyle = 'rgba(233,30,99,0.03)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < 550; x += 25) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 300); ctx.stroke();
+            }
+            for (let y = 0; y < 300; y += 25) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(550, y); ctx.stroke();
+            }
+
+            if (gameState === 'playing') {
+                // Update specific game logic
+                if (type === 'hair') {
+                    // Update pointer
+                    pointerX += pointerSpeed * pointerDir * dt * 60;
+                    if (pointerX >= 520) { pointerX = 520; pointerDir = -1; }
+                    if (pointerX <= 30) { pointerX = 30; pointerDir = 1; }
+
+                    // Draw Target Zone
+                    ctx.fillStyle = 'rgba(76, 175, 80, 0.2)';
+                    ctx.fillRect(targetStart, 180, targetWidth, 40);
+                    ctx.strokeStyle = '#4CAF50';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(targetStart, 180, targetWidth, 40);
+
+                    // Draw Slider Bar
+                    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+                    ctx.fillRect(30, 195, 490, 10);
+                    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+                    ctx.strokeRect(30, 195, 490, 10);
+
+                    // Draw Pointer
+                    ctx.fillStyle = '#ff3366';
+                    ctx.fillRect(pointerX - 4, 180, 8, 40);
+
+                    // Draw Scissors & hair styling visual
+                    ctx.font = '72px Cairo';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('💇‍♀️✂️', 275, 100);
+
+                    // Draw HUD details
+                    ctx.font = 'bold 16px Cairo';
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(`الدرجة: ${score}/3`, 520, 35);
+                    ctx.textAlign = 'left';
+                    ctx.fillText(`المحاولات المتبقية: ${lives}`, 30, 35);
+
+                } else if (type === 'makeup') {
+                    // Draw Face Silhouette
+                    ctx.beginPath();
+                    ctx.arc(275, 100, 50, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffccbc';
+                    ctx.fill();
+                    ctx.strokeStyle = '#ff8a80';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+
+                    // Neck
+                    ctx.fillStyle = '#ffccbc';
+                    ctx.fillRect(265, 140, 20, 30);
+
+                    // Cheeks & Eyes
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(250, 90, 10, 5);
+                    ctx.fillRect(290, 90, 10, 5);
+
+                    // Hair Outline overlay
+                    ctx.beginPath();
+                    ctx.arc(275, 80, 52, Math.PI, 0);
+                    ctx.strokeStyle = '#ff7043';
+                    ctx.lineWidth = 12;
+                    ctx.stroke();
+
+                    // Render clicked cosmetic layers
+                    dots.forEach(d => {
+                        if (d.clicked) {
+                            ctx.beginPath();
+                            ctx.arc(d.x, d.y, 8, 0, Math.PI * 2);
+                            ctx.fillStyle = d.color;
+                            ctx.fill();
+                        }
+                    });
+
+                    // Render dots
+                    dots.forEach((d, idx) => {
+                        if (!d.clicked) {
+                            ctx.beginPath();
+                            ctx.arc(d.x, d.y, 14, 0, Math.PI * 2);
+                            ctx.fillStyle = d.active ? 'rgba(233,30,99,0.3)' : 'rgba(255,255,255,0.05)';
+                            ctx.fill();
+                            ctx.strokeStyle = d.active ? '#e91e63' : 'rgba(255,255,255,0.2)';
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+
+                            ctx.font = 'bold 11px Cairo';
+                            ctx.fillStyle = d.active ? '#fff' : 'rgba(255,255,255,0.3)';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText(idx + 1, d.x, d.y);
+                        }
+                    });
+
+                    ctx.font = 'bold 16px Cairo';
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`انقر على النقطة المضيئة رقم ${activeDotIdx + 1}`, 275, 230);
+
+                } else if (type === 'nails') {
+                    // Draw Hand shape
+                    ctx.fillStyle = '#f5c2b3';
+                    ctx.beginPath();
+                    ctx.arc(275, 250, 90, Math.PI, 0);
+                    ctx.fill();
+
+                    // Draw fingers & nails
+                    for (let idx = 0; idx < 5; idx++) {
+                        const x = nailX[idx];
+                        const y = idx === 2 ? 140 : (idx === 1 || idx === 3 ? 150 : 170);
+
+                        // Finger block
+                        ctx.fillStyle = '#f5c2b3';
+                        ctx.fillRect(x - 16, y, 32, 100);
+                        ctx.beginPath();
+                        ctx.arc(x, y, 16, Math.PI, 0);
+                        ctx.fill();
+
+                        // Target color dot above finger
+                        ctx.beginPath();
+                        ctx.arc(x, y - 25, 8, 0, Math.PI * 2);
+                        ctx.fillStyle = targetColors[idx];
+                        ctx.fill();
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = idx === activeNailIdx ? 2 : 0.5;
+                        ctx.stroke();
+
+                        // Nail itself
+                        ctx.fillStyle = nailColors[idx];
+                        ctx.fillRect(x - 8, y - 8, 16, 18);
+                        ctx.beginPath();
+                        ctx.arc(x, y - 8, 8, Math.PI, 0);
+                        ctx.fill();
+                    }
+
+                    // Brush cycling at top
+                    colorCycleTimer += dt;
+                    if (colorCycleTimer >= 0.7) {
+                        colorCycleTimer = 0;
+                        currentColorIdx = (currentColorIdx + 1) % targetColors.length;
+                    }
+
+                    // Draw Brush Selector
+                    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+                    ctx.fillRect(150, 30, 250, 40);
+                    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+                    ctx.strokeRect(150, 30, 250, 40);
+
+                    ctx.font = 'bold 14px Cairo';
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'right';
+                    ctx.fillText('لون الفرشاة الحالي:', 280, 54);
+
+                    ctx.beginPath();
+                    ctx.arc(310, 50, 12, 0, Math.PI * 2);
+                    ctx.fillStyle = targetColors[currentColorIdx];
+                    ctx.fill();
+                    ctx.strokeStyle = '#fff';
+                    ctx.stroke();
+
+                    // HUD
+                    ctx.font = 'bold 15px Cairo';
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(`قلوب: ${lives}`, 30, 35);
+                    ctx.textAlign = 'right';
+                    ctx.fillText(`الأظافر: ${activeNailIdx}/5`, 520, 35);
+
+                } else if (type === 'spa') {
+                    // Update timer
+                    timer -= dt;
+                    if (timer <= 0) {
+                        timer = 0;
+                        gameState = 'lost';
+                    }
+
+                    // Spawn bubbles
+                    spawnTimer += dt;
+                    if (spawnTimer >= 0.35) {
+                        spawnTimer = 0;
+                        bubbles.push({
+                            x: 40 + Math.random() * 470,
+                            y: 320,
+                            r: 10 + Math.random() * 15,
+                            speed: 60 + Math.random() * 80
+                        });
+                    }
+
+                    // Update bubbles
+                    for (let i = bubbles.length - 1; i >= 0; i--) {
+                        const b = bubbles[i];
+                        b.y -= b.speed * dt;
+                        
+                        // Draw bubble
+                        ctx.beginPath();
+                        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(0,229,255,0.15)';
+                        ctx.fill();
+                        ctx.strokeStyle = '#00e5ff';
+                        ctx.lineWidth = 1.5;
+                        ctx.stroke();
+
+                        // Shimmer highlight
+                        ctx.beginPath();
+                        ctx.arc(b.x - b.r/3, b.y - b.r/3, b.r/4, 0, Math.PI*2);
+                        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                        ctx.fill();
+
+                        if (b.y < -30) bubbles.splice(i, 1);
+                    }
+
+                    // Draw progress and timer
+                    ctx.font = 'bold 16px Cairo';
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(`⏱️ الوقت: ${timer.toFixed(1)} ثانية`, 30, 35);
+                    ctx.textAlign = 'right';
+                    ctx.fillText(`فقاعات مفرقعة: ${score}/15`, 520, 35);
+
+                } else if (type === 'bridal') {
+                    // Update Tiara slider
+                    if (!falling) {
+                        tiaraX += tiaraSpeed * tiaraDir * dt * 60;
+                        if (tiaraX >= 500) { tiaraX = 500; tiaraDir = -1; }
+                        if (tiaraX <= 50) { tiaraX = 50; tiaraDir = 1; }
+                    } else {
+                        // Falling physics
+                        tiaraY += tiaraSpeed * dt * 100;
+                        if (tiaraY >= 190) { // Collision level
+                            falling = false;
+                            const diff = Math.abs(tiaraX - 275);
+                            if (diff < 26) {
+                                gameState = 'won';
+                                window.gameInstance.playSynthSound && window.gameInstance.playSynthSound('success');
+                            } else {
+                                lives--;
+                                window.gameInstance.playSynthSound && window.gameInstance.playSynthSound('danger');
+                                tiaraY = 50;
+                                if (lives <= 0) gameState = 'lost';
+                            }
+                        }
+                    }
+
+                    // Draw Bride Head
+                    ctx.beginPath();
+                    ctx.arc(275, 230, 40, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffe0b2';
+                    ctx.fill();
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Bridal veil
+                    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                    ctx.beginPath();
+                    ctx.moveTo(235, 230);
+                    ctx.lineTo(210, 290);
+                    ctx.lineTo(340, 290);
+                    ctx.lineTo(315, 230);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    // Tiara (Crown)
+                    ctx.fillStyle = '#ffd700';
+                    ctx.beginPath();
+                    ctx.moveTo(tiaraX - 20, tiaraY);
+                    ctx.lineTo(tiaraX - 10, tiaraY - 15);
+                    ctx.lineTo(tiaraX, tiaraY - 5);
+                    ctx.lineTo(tiaraX + 10, tiaraY - 15);
+                    ctx.lineTo(tiaraX + 20, tiaraY);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    // HUD
+                    ctx.font = 'bold 15px Cairo';
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(`محاولات: ${lives}`, 30, 35);
+                }
+            } else if (gameState === 'won') {
+                ctx.fillStyle = 'rgba(12,11,22,0.9)';
+                ctx.fillRect(0, 0, 550, 300);
+
+                ctx.font = 'bold 36px Cairo';
+                ctx.fillStyle = '#4CAF50';
+                ctx.textAlign = 'center';
+                ctx.fillText('نجاح باهر! 🎉', 275, 120);
+
+                ctx.font = '16px Cairo';
+                ctx.fillStyle = '#fff';
+                ctx.fillText('قمت بالخدمة باحترافية تامة!', 275, 165);
+                ctx.fillText('مكافأة: +50% بقشيش وإرضاء كامل للعميلة!', 275, 195);
+
+                btn.textContent = 'استلام المكافأة 💰';
+                btn.onclick = () => {
+                    cleanup();
+                    // trigger win rewards
+                    if (window.gameInstance.completeMiniGame) {
+                        window.gameInstance.completeMiniGame(customer.id, true);
+                    }
+                    this.closeModal();
+                };
+            } else if (gameState === 'lost') {
+                ctx.fillStyle = 'rgba(12,11,22,0.9)';
+                ctx.fillRect(0, 0, 550, 300);
+
+                ctx.font = 'bold 36px Cairo';
+                ctx.fillStyle = '#ff3366';
+                ctx.textAlign = 'center';
+                ctx.fillText('لم تضبط تماماً! 😢', 275, 120);
+
+                ctx.font = '16px Cairo';
+                ctx.fillStyle = '#fff';
+                ctx.fillText('الخدمة ستستمر تلقائياً بواسطة الموظفات.', 275, 170);
+
+                btn.textContent = 'موافق (إكمال تلقائي)';
+                btn.onclick = () => {
+                    cleanup();
+                    if (window.gameInstance.completeMiniGame) {
+                        window.gameInstance.completeMiniGame(customer.id, false);
+                    }
+                    this.closeModal();
+                };
+            }
+
+            this.miniGameLoopId = requestAnimationFrame(loop);
+        };
+
+        this.miniGameLoopId = requestAnimationFrame(loop);
+    }
+
+    update() {
+        // Top HUD values
+        const repVal = document.getElementById('hud-rep-val');
+        if (repVal) {
+            repVal.textContent = `⭐ ${this.game.reputation}%`;
+            if (this.game.reputation < 35) {
+                repVal.className = 'hud-rep low';
+            } else {
+                repVal.className = 'hud-rep';
+            }
+        }
+        
+        const moneyVal = document.getElementById('hud-money-val');
+        if (moneyVal) {
+            moneyVal.textContent = `${this.game.money.toLocaleString()} ج.م`;
+        }
+        
+        const timeVal = document.getElementById('hud-time-val');
+        if (timeVal) {
+            const h = this.game.hour;
+            const m = this.game.minute < 10 ? '0' + Math.floor(this.game.minute) : Math.floor(this.game.minute);
+            const period = h >= 12 ? 'PM' : 'AM';
+            const displayH = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+            
+            timeVal.textContent = `يوم ${this.game.day} | ⏰ ${displayH}:${m} ${period}`;
+        }
+        
+        const lvlVal = document.getElementById('hud-level-val');
+        if (lvlVal) {
+            lvlVal.textContent = `🏆 مستوى ${this.game.level}`;
+        }
+        
+        const xpPctText = document.getElementById('hud-xp-pct');
+        const xpInner = document.getElementById('hud-xp-bar');
+        if (xpInner && xpPctText) {
+            const needed = this.game.level * 100;
+            const pct = Math.min(100, Math.floor((this.game.xp / needed) * 100));
+            xpInner.style.width = `${pct}%`;
+            xpPctText.textContent = `${pct}%`;
+        }
+
+        // Active screens refresh
+        if (this.activeModal && this.activeModal !== 'mini_game') {
             this.renderModalContent();
         }
     }
